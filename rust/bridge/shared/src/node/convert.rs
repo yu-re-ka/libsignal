@@ -7,7 +7,6 @@ use neon::prelude::*;
 use paste::paste;
 use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
-use std::convert::{TryFrom, TryInto};
 use std::hash::Hasher;
 use std::ops::{Deref, RangeInclusive};
 use std::slice;
@@ -241,7 +240,7 @@ impl SimpleArgTypeInfo for String {
 impl SimpleArgTypeInfo for uuid::Uuid {
     type ArgType = JsBuffer;
     fn convert_from(cx: &mut FunctionContext, foreign: Handle<Self::ArgType>) -> NeonResult<Self> {
-        cx.borrow(&foreign, |buffer| uuid::Uuid::from_slice(buffer.as_slice()))
+        uuid::Uuid::from_slice(foreign.as_slice(cx))
             .or_else(|_| cx.throw_type_error("UUIDs have 16 bytes"))
     }
 }
@@ -321,15 +320,17 @@ impl<'a> AssumedImmutableBuffer<'a> {
     ///
     /// [napi]: https://nodejs.org/api/n-api.html#n_api_napi_get_buffer_info
     fn new<'b>(cx: &mut impl Context<'b>, handle: Handle<'a, JsBuffer>) -> Self {
-        let buffer = cx.borrow(&handle, |buf| {
-            if buf.len() == 0 {
-                &[]
-            } else {
-                unsafe { extend_lifetime::<'_, 'a, [u8]>(buf.as_slice()) }
-            }
-        });
-        let hash = calculate_checksum_for_immutable_buffer(buffer);
-        Self { buffer, hash }
+        let buf = handle.as_slice(cx);
+        let extended_lifetime_buffer = if buf.len() == 0 {
+            &[]
+        } else {
+            unsafe { extend_lifetime::<'_, 'a, [u8]>(buf) }
+        };
+        let hash = calculate_checksum_for_immutable_buffer(extended_lifetime_buffer);
+        Self {
+            buffer: extended_lifetime_buffer,
+            hash,
+        }
     }
 }
 
@@ -383,22 +384,17 @@ impl PersistentAssumedImmutableBuffer {
     /// [napi]: https://nodejs.org/api/n-api.html#n_api_napi_get_buffer_info
     fn new<'a>(cx: &mut impl Context<'a>, buffer: Handle<JsBuffer>) -> Self {
         let owner = buffer.root(cx);
-        let (buffer_start, buffer_len, hash) = cx.borrow(&buffer, |buf| {
-            (
-                if buf.len() == 0 {
-                    std::ptr::null()
-                } else {
-                    buf.as_slice().as_ptr()
-                },
-                buf.len(),
-                calculate_checksum_for_immutable_buffer(buf.as_slice()),
-            )
-        });
+        let buffer_as_slice = buffer.as_slice(cx);
+        let buffer_start = if buffer_as_slice.len() == 0 {
+            std::ptr::null()
+        } else {
+            buffer_as_slice.as_ptr()
+        };
         Self {
             owner,
             buffer_start,
-            buffer_len,
-            hash,
+            buffer_len: buffer_as_slice.len(),
+            hash: calculate_checksum_for_immutable_buffer(buffer_as_slice),
         }
     }
 }
@@ -529,9 +525,7 @@ impl<'a> ResultTypeInfo<'a> for uuid::Uuid {
     type ResultType = JsBuffer;
     fn convert_into(self, cx: &mut impl Context<'a>) -> JsResult<'a, Self::ResultType> {
         let mut buffer = cx.buffer(16)?;
-        cx.borrow_mut(&mut buffer, |raw_buffer| {
-            raw_buffer.as_mut_slice().copy_from_slice(self.as_bytes());
-        });
+        buffer.as_mut_slice(cx).copy_from_slice(self.as_bytes());
         Ok(buffer)
     }
 }
@@ -550,15 +544,8 @@ impl<'a, T: ResultTypeInfo<'a>> ResultTypeInfo<'a> for Option<T> {
 impl<'a> ResultTypeInfo<'a> for Vec<u8> {
     type ResultType = JsBuffer;
     fn convert_into(self, cx: &mut impl Context<'a>) -> NeonResult<Handle<'a, Self::ResultType>> {
-        let bytes_len = match u32::try_from(self.len()) {
-            Ok(l) => l,
-            Err(_) => return cx.throw_error("Cannot return very large object to JS environment"),
-        };
-
-        let mut buffer = cx.buffer(bytes_len)?;
-        cx.borrow_mut(&mut buffer, |raw_buffer| {
-            raw_buffer.as_mut_slice().copy_from_slice(&self);
-        });
+        let mut buffer = cx.buffer(self.len())?;
+        buffer.as_mut_slice(cx).copy_from_slice(&self);
         Ok(buffer)
     }
 }
@@ -922,14 +909,8 @@ impl<'a> crate::support::Env for &'_ mut FunctionContext<'a> {
     type Buffer = JsResult<'a, JsBuffer>;
     fn buffer<'b, T: Into<Cow<'b, [u8]>>>(self, input: T) -> Self::Buffer {
         let input = input.into();
-        let len: u32 = input
-            .len()
-            .try_into()
-            .or_else(|_| self.throw_error("buffer too large to return to JavaScript"))?;
-        let mut result = Context::buffer(self, len)?;
-        self.borrow_mut(&mut result, |buf| {
-            buf.as_mut_slice().copy_from_slice(input.as_ref())
-        });
+        let mut result = Context::buffer(self, input.len())?;
+        result.as_mut_slice(self).copy_from_slice(input.as_ref());
         Ok(result)
     }
 }

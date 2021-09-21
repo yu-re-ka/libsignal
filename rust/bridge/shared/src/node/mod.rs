@@ -9,6 +9,7 @@ use std::ops::Deref;
 
 pub(crate) use neon::context::Context;
 pub(crate) use neon::prelude::*;
+pub(crate) use neon::types::buffer::TypedArray;
 
 /// Used to keep track of all generated entry points.
 ///
@@ -92,16 +93,8 @@ pub fn return_binary_data<'a, T: AsRef<[u8]>>(
         Ok(Some(bytes)) => {
             let bytes = bytes.as_ref();
 
-            let bytes_len = match u32::try_from(bytes.len()) {
-                Ok(l) => l,
-                Err(_) => {
-                    return cx.throw_error("Cannot return very large object to JS environment")
-                }
-            };
-            let mut buffer = cx.buffer(bytes_len)?;
-            cx.borrow_mut(&mut buffer, |raw_buffer| {
-                raw_buffer.as_mut_slice().copy_from_slice(bytes);
-            });
+            let mut buffer = cx.buffer(bytes.len())?;
+            buffer.as_mut_slice(cx).copy_from_slice(bytes);
             Ok(buffer.upcast())
         }
         Ok(None) => Ok(cx.null().upcast()),
@@ -120,16 +113,6 @@ pub fn return_string<'a, T: AsRef<str>>(
     }
 }
 
-pub(crate) fn with_buffer_contents<R>(
-    cx: &mut FunctionContext,
-    buffer: Handle<JsBuffer>,
-    f: impl for<'a> FnOnce(&'a [u8]) -> R,
-) -> R {
-    let guard = cx.lock();
-    let slice = buffer.borrow(&guard).as_slice::<u8>();
-    f(slice)
-}
-
 /// Implementation of [`bridge_deserialize`](crate::support::bridge_deserialize) for Node.
 macro_rules! node_bridge_deserialize {
     ( $typ:ident::$fn:path as false ) => {};
@@ -141,8 +124,7 @@ macro_rules! node_bridge_deserialize {
                 mut cx: node::FunctionContext
             ) -> node::JsResult<node::JsValue> {
                 let buffer = cx.argument::<node::JsBuffer>(0)?;
-                let obj: Result<$typ> =
-                    node::with_buffer_contents(&mut cx, buffer, |buf| $typ::$fn(buf));
+                let obj: Result<$typ> = $typ::$fn(node::TypedArray::as_slice(&*buffer, &cx));
                 match obj {
                     Ok(obj) => node::ResultTypeInfo::convert_into(obj, &mut cx),
                     Err(err) => {

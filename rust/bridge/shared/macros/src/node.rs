@@ -119,30 +119,30 @@ fn bridge_fn_async_body(
         let mut cx = cx.into_inner();
         let __this = cx.this();
         let __this = neon::object::Object::root(&*__this, &mut cx);
-        Ok(signal_neon_futures::promise(
-            &mut cx,
-            std::panic::AssertUnwindSafe(async move {
-                #(#input_loading)*
-                let __result = #orig_name(#env_arg #(#input_names),*).await;
-                signal_neon_futures::settle_promise(move |cx| {
-                    let mut cx = scopeguard::guard(cx, |cx| {
-                        #(#input_finalization)*
-                    });
-                    let __this = __this.into_inner(*cx);
-                    match __result {
-                        Ok(success) => Ok(
-                            node::ResultTypeInfo::convert_into(success, *cx)?.upcast(),
-                        ),
-                        Err(failure) => node::SignalNodeError::throw(
-                            failure,
-                            *cx,
-                            __this,
-                            stringify!(#orig_name),
-                        ),
-                    }
-                })
-            })
-        )?.upcast())
+        let (__deferred, __promise) = neon::context::Context::promise(&mut cx);
+        let __channel = neon::context::Context::channel(&mut cx);
+        signal_neon_futures::ContextEx::start_future(&mut cx, async move {
+            #(#input_loading)*
+            let __result = #orig_name(#env_arg #(#input_names),*).await;
+            __channel.settle_with(__deferred, move |cx| {
+                let mut cx = scopeguard::guard(cx, |cx| {
+                    #(#input_finalization)*
+                });
+                let __this = __this.into_inner(*cx);
+                match __result {
+                    Ok(success) => Ok(
+                        node::ResultTypeInfo::convert_into(success, *cx)?.upcast(),
+                    ),
+                    Err(failure) => node::SignalNodeError::throw(
+                        failure,
+                        *cx,
+                        __this,
+                        stringify!(#orig_name),
+                    ),
+                }
+            });
+        });
+        Ok(__promise.upcast())
     }
 }
 

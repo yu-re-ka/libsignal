@@ -5,6 +5,7 @@
 
 use futures_util::try_join;
 use neon::prelude::*;
+use neon::types::JsPromise;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
@@ -61,21 +62,24 @@ async fn double_name_from_store_impl(store: &mut NameStore) -> Result<String, St
 }
 
 // function doubleNameFromStore(store: { getName: () => Promise<string> }): Promise<string>
-pub fn double_name_from_store(mut cx: FunctionContext) -> JsResult<JsObject> {
+pub fn double_name_from_store(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let js_store = cx.argument(0)?;
     let mut store = NameStore::new(&mut cx, js_store);
 
-    promise(&mut cx, async move {
+    let (deferred, promise) = cx.promise();
+    let channel = cx.channel();
+    cx.start_future(async move {
         let future = AssertUnwindSafe(double_name_from_store_impl(&mut store));
         let result = future.await;
-        settle_promise(move |cx| {
+        channel.settle_with(deferred, move |cx| {
             store.finalize(cx);
             match result {
                 Ok(doubled) => Ok(cx.string(doubled)),
                 Err(message) => cx.throw_error(format!("rejected: {}", message)),
             }
-        })
-    })
+        });
+    });
+    Ok(promise)
 }
 
 async fn double_name_from_store_using_join_impl(store: &mut NameStore) -> Result<String, String> {
@@ -84,19 +88,22 @@ async fn double_name_from_store_using_join_impl(store: &mut NameStore) -> Result
 }
 
 // function doubleNameFromStoreUsingJoin(store: { getName: () => Promise<string> }): Promise<string>
-pub fn double_name_from_store_using_join(mut cx: FunctionContext) -> JsResult<JsObject> {
+pub fn double_name_from_store_using_join(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let js_store = cx.argument(0)?;
     let mut store = NameStore::new(&mut cx, js_store);
 
-    promise(&mut cx, async move {
+    let (deferred, promise) = cx.promise();
+    let channel = cx.channel();
+    cx.start_future(async move {
         let future = AssertUnwindSafe(double_name_from_store_using_join_impl(&mut store));
         let result = future.await;
-        settle_promise(move |cx| {
+        channel.settle_with(deferred, move |cx| {
             store.finalize(cx);
             match result {
                 Ok(doubled) => Ok(cx.string(doubled)),
                 Err(message) => cx.throw_error(format!("rejected: {}", message)),
             }
-        })
-    })
+        });
+    });
+    Ok(promise)
 }

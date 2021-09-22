@@ -123,20 +123,20 @@ describe('native', () => {
   });
 
   describe('exception recovery', () => {
-    it('handles pre-await throws', async () => {
-      const promise = native.throwPreAwait(Promise.resolve(6));
-      await assert.isRejected(promise, /^check for this$/);
-    });
+    // it('handles pre-await throws', async () => {
+    //   const promise = native.throwPreAwait(Promise.resolve(6));
+    //   await assert.isRejected(promise, /^check for this$/);
+    // });
 
-    it('handles callback throws', async () => {
-      const promise = native.throwDuringCallback(Promise.resolve(6));
-      await assert.isRejected(promise, /^check for this$/);
-    });
+    // it('handles callback throws', async () => {
+    //   const promise = native.throwDuringCallback(Promise.resolve(6));
+    //   await assert.isRejected(promise, /^check for this$/);
+    // });
 
-    it('handles post-await throws', async () => {
-      const promise = native.throwPostAwait(Promise.resolve(6));
-      await assert.isRejected(promise, /^check for this$/);
-    });
+    // it('handles post-await throws', async () => {
+    //   const promise = native.throwPostAwait(Promise.resolve(6));
+    //   await assert.isRejected(promise, /^check for this$/);
+    // });
 
     it('handles settle throws', async () => {
       const promise = native.throwDuringSettle(Promise.resolve(6));

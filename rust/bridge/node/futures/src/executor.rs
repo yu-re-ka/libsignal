@@ -14,14 +14,14 @@ use std::task::{Poll, Wake};
 /// [Channel]: https://docs.rs/neon/0.9.0/neon/event/struct.Channel.html
 pub trait ChannelEx {
     /// Schedules the future to run on the JavaScript main thread until complete.
-    fn send_future(self: Arc<Self>, future: impl Future<Output = ()> + 'static + Send);
+    fn send_future(&self, future: impl Future<Output = ()> + 'static + Send);
     /// Polls the future synchronously, then schedules it to run on the JavaScript main thread from
     /// then on.
-    fn start_future(self: Arc<Self>, future: impl Future<Output = ()> + 'static + Send);
+    fn start_future(&self, future: impl Future<Output = ()> + 'static + Send);
 }
 
 impl ChannelEx for Channel {
-    fn send_future(self: Arc<Self>, future: impl Future<Output = ()> + 'static + Send) {
+    fn send_future(&self, future: impl Future<Output = ()> + 'static + Send) {
         let self_for_task = self.clone();
         self.send(move |_| {
             let task = Arc::new(FutureTask {
@@ -33,9 +33,9 @@ impl ChannelEx for Channel {
         });
     }
 
-    fn start_future(self: Arc<Self>, future: impl Future<Output = ()> + 'static + Send) {
+    fn start_future(&self, future: impl Future<Output = ()> + 'static + Send) {
         let task = Arc::new(FutureTask {
-            channel: self,
+            channel: self.clone(),
             future: Mutex::new(Some(Box::pin(future))),
         });
         task.poll();
@@ -60,6 +60,27 @@ impl<T: Future> Future for AssertSendSafe<T> {
     }
 }
 
+/// Adds support for executing futures on the context's [Channel].
+///
+/// Because the futures always run on the JavaScript main thread, they do not need to be Send.
+///
+/// [Channel]: https://docs.rs/neon/0.9.0/neon/event/struct.Channel.html
+pub trait ContextEx {
+    /// Polls the future synchronously, then schedules it to run on the JavaScript main thread from
+    /// then on.
+    ///
+    /// Note that this will only be efficient with N-API 6 features enabled in Neon;
+    /// otherwise it will create a new channel just for this send.
+    fn start_future(&mut self, future: impl Future<Output = ()> + 'static);
+}
+
+impl<'a, T: Context<'a>> ContextEx for T {
+    fn start_future(&mut self, future: impl Future<Output = ()> + 'static) {
+        self.channel()
+            .start_future(unsafe { AssertSendSafe::wrap(future) })
+    }
+}
+
 /// Implements waking for futures scheduled on the JavaScript microtask queue.
 ///
 /// When the task is awoken, it reschedules itself on the channel to re-poll the top-level Future.
@@ -67,7 +88,7 @@ struct FutureTask<F>
 where
     F: Future<Output = ()> + 'static + Send,
 {
-    channel: Arc<Channel>,
+    channel: Channel,
     future: Mutex<Option<Pin<Box<F>>>>,
 }
 

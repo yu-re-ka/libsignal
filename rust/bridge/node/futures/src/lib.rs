@@ -11,10 +11,10 @@
 //! This does not naturally compose with Rust's `async`, which works in terms of [Futures](trait@std::future::Future).
 //!
 //! This crate provides functionality for (1) wrapping JavaScript futures so they can be awaited on in Rust,
-//! and (2) producing a JavaScript promise that wraps a Rust future. It does so by resuming execution
-//! of the Rust future on the JavaScript microtask queue whenever an awaited JavaScript promise is settled.
+//! and (2) running Rust futures on the JavaScript event queue. It does so by resuming execution
+//! of the Rust future whenever an awaited JavaScript promise is settled.
 //!
-//! To get started, look at the [promise()] function and the [JsFuture::from_promise] method.
+//! To get started, look at the [ChannelEx] methods and the [JsFuture::from_promise] method.
 //!
 //! [Neon]: https://neon-bindings.com/
 
@@ -22,16 +22,13 @@
 #![warn(clippy::unwrap_used)]
 
 mod executor;
-pub use executor::ChannelEx;
+pub use executor::{ChannelEx, ContextEx};
 
 mod exception;
 pub use exception::PersistentException;
 
 mod future;
 pub use future::{JsFuture, JsFutureBuilder};
-
-mod promise;
-pub use promise::{promise, settle_promise};
 
 mod result;
 pub use result::JsPromiseResult;

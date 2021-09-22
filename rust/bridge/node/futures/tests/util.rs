@@ -49,6 +49,6 @@ pub fn run(action: &str) {
             "\nSIGNAL_NEON_FUTURES_TEST_LIB={:?} yarn --cwd {:?} {}\n",
             node_library_path, test_cases, action
         );
-        panic!("Node tests failed");
+        std::process::exit(1);
     }
 }

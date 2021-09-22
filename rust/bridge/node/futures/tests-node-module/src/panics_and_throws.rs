@@ -4,10 +4,11 @@
 //
 
 use neon::prelude::*;
+use neon::types::JsPromise;
 use signal_neon_futures::*;
 
 #[allow(unreachable_code, unused_variables)]
-pub fn panic_pre_await(mut cx: FunctionContext) -> JsResult<JsObject> {
+pub fn panic_pre_await(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let promise = cx.argument::<JsObject>(0)?;
 
     let future = JsFuture::from_promise(&mut cx, promise, move |cx, result| {
@@ -18,29 +19,41 @@ pub fn panic_pre_await(mut cx: FunctionContext) -> JsResult<JsObject> {
         .map_err(|e| PersistentException::new(cx, e))
     })?;
 
-    signal_neon_futures::promise(&mut cx, async move {
+    let (deferred, promise) = cx.promise();
+    let channel = cx.channel();
+    cx.start_future(async move {
         panic!("check for this");
-        future.await?;
-        settle_promise(move |cx| Ok(cx.undefined()))
-    })
+        let result = future.await;
+        channel.settle_with(deferred, move |cx| match result {
+            Ok(value) => Ok(cx.undefined()),
+            Err(e) => {
+                let exception = e.into_inner(cx);
+                cx.throw(exception)
+            }
+        });
+    });
+    Ok(promise)
 }
 
 #[allow(unreachable_code)]
-pub fn panic_during_callback(mut cx: FunctionContext) -> JsResult<JsObject> {
+pub fn panic_during_callback(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let promise = cx.argument::<JsObject>(0)?;
 
-    let future = JsFuture::from_promise(&mut cx, promise, move |_cx, _result| {
+    let future: JsFuture<()> = JsFuture::from_promise(&mut cx, promise, move |_cx, _result| {
         panic!("check for this");
     })?;
 
-    signal_neon_futures::promise(&mut cx, async move {
-        future.await;
-        settle_promise(move |cx| Ok(cx.undefined()))
-    })
+    let (deferred, promise) = cx.promise();
+    let channel = cx.channel();
+    cx.start_future(async move {
+        let _ = future.await;
+        channel.settle_with(deferred, move |cx| Ok(cx.undefined()));
+    });
+    Ok(promise)
 }
 
 #[allow(unreachable_code)]
-pub fn panic_post_await(mut cx: FunctionContext) -> JsResult<JsObject> {
+pub fn panic_post_await(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let promise = cx.argument::<JsObject>(0)?;
 
     let future = JsFuture::from_promise(&mut cx, promise, move |cx, result| {
@@ -51,15 +64,16 @@ pub fn panic_post_await(mut cx: FunctionContext) -> JsResult<JsObject> {
         .map_err(|e| PersistentException::new(cx, e))
     })?;
 
-    signal_neon_futures::promise(&mut cx, async move {
-        future.await?;
+    let (_deferred, promise) = cx.promise();
+    cx.start_future(async move {
+        let _ = future.await;
         panic!("check for this");
-        settle_promise(move |cx| Ok(cx.undefined()))
-    })
+    });
+    Ok(promise)
 }
 
 #[allow(unreachable_code, unused_variables)]
-pub fn panic_during_settle(mut cx: FunctionContext) -> JsResult<JsObject> {
+pub fn panic_during_settle(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let promise = cx.argument::<JsObject>(0)?;
 
     let future = JsFuture::from_promise(&mut cx, promise, move |cx, result| {
@@ -70,17 +84,16 @@ pub fn panic_during_settle(mut cx: FunctionContext) -> JsResult<JsObject> {
         .map_err(|e| PersistentException::new(cx, e))
     })?;
 
-    signal_neon_futures::promise(&mut cx, async move {
-        future.await?;
-        settle_promise(move |cx| {
-            panic!("check for this");
-            Ok(cx.undefined())
-        })
-    })
+    let (deferred, promise) = cx.promise();
+    let channel = cx.channel();
+    cx.start_future(async move {
+        let result = future.await;
+        channel.settle_with::<JsUndefined, _>(deferred, move |cx| panic!("check for this"));
+    });
+    Ok(promise)
 }
 
-#[allow(unreachable_code, unused_variables)]
-pub fn throw_pre_await(mut cx: FunctionContext) -> JsResult<JsObject> {
+pub fn throw_during_settle(mut cx: FunctionContext) -> JsResult<JsPromise> {
     let promise = cx.argument::<JsObject>(0)?;
 
     let future = JsFuture::from_promise(&mut cx, promise, move |cx, result| {
@@ -91,71 +104,14 @@ pub fn throw_pre_await(mut cx: FunctionContext) -> JsResult<JsObject> {
         .map_err(|e| PersistentException::new(cx, e))
     })?;
 
-    let error = cx.error("check for this")?;
-    let persistent_error = PersistentException::new(&mut cx, error);
-
-    signal_neon_futures::promise(&mut cx, async move {
-        return Err(persistent_error);
-        future.await?;
-        settle_promise(move |cx| Ok(cx.undefined()))
-    })
-}
-
-pub fn throw_during_callback(mut cx: FunctionContext) -> JsResult<JsObject> {
-    let promise = cx.argument::<JsObject>(0)?;
-
-    let future = JsFuture::from_promise(&mut cx, promise, move |cx, _result| {
-        cx.try_catch(|cx| {
-            cx.throw_error("check for this")?;
-            Ok(())
-        })
-        .map_err(|e| PersistentException::new(cx, e))
-    })?;
-
-    signal_neon_futures::promise(&mut cx, async move {
-        future.await?;
-        settle_promise(move |cx| Ok(cx.undefined()))
-    })
-}
-
-#[allow(unreachable_code)]
-pub fn throw_post_await(mut cx: FunctionContext) -> JsResult<JsObject> {
-    let promise = cx.argument::<JsObject>(0)?;
-
-    let future = JsFuture::from_promise(&mut cx, promise, move |cx, result| {
-        cx.try_catch(|cx| {
-            let value = result.or_else(|e| cx.throw(e))?;
-            Ok(value.downcast_or_throw::<JsNumber, _>(cx)?.value(cx))
-        })
-        .map_err(|e| PersistentException::new(cx, e))
-    })?;
-
-    let error = cx.error("check for this")?;
-    let persistent_error = PersistentException::new(&mut cx, error);
-
-    signal_neon_futures::promise(&mut cx, async move {
-        future.await?;
-        return Err(persistent_error);
-        settle_promise(move |cx| Ok(cx.undefined()))
-    })
-}
-
-pub fn throw_during_settle(mut cx: FunctionContext) -> JsResult<JsObject> {
-    let promise = cx.argument::<JsObject>(0)?;
-
-    let future = JsFuture::from_promise(&mut cx, promise, move |cx, result| {
-        cx.try_catch(|cx| {
-            let value = result.or_else(|e| cx.throw(e))?;
-            Ok(value.downcast_or_throw::<JsNumber, _>(cx)?.value(cx))
-        })
-        .map_err(|e| PersistentException::new(cx, e))
-    })?;
-
-    signal_neon_futures::promise(&mut cx, async move {
-        future.await?;
-        settle_promise(move |cx| {
+    let (deferred, promise) = cx.promise();
+    let channel = cx.channel();
+    cx.start_future(async move {
+        let _ = future.await;
+        channel.settle_with(deferred, move |cx| {
             cx.throw_error("check for this")?;
             Ok(cx.undefined())
-        })
-    })
+        });
+    });
+    Ok(promise)
 }

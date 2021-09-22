@@ -48,8 +48,8 @@ fn increment_async(mut cx: FunctionContext) -> JsResult<JsUndefined> {
 }
 
 // function incrementPromise(promise: Promise<number>): Promise<number>
-fn increment_promise(mut cx: FunctionContext) -> JsResult<JsObject> {
-    // A much simpler variant that uses the higher abstractions provided by promise.
+fn increment_promise(mut cx: FunctionContext) -> JsResult<JsPromise> {
+    // A much simpler variant that uses the higher abstractions provided by JsPromise.
     let promise = cx.argument::<JsObject>(0)?;
     let future = JsFuture::from_promise(&mut cx, promise, move |cx, result| {
         cx.try_catch(|cx| {
@@ -59,14 +59,23 @@ fn increment_promise(mut cx: FunctionContext) -> JsResult<JsObject> {
         .map_err(|e| PersistentException::new(cx, e))
     })?;
 
-    signal_neon_futures::promise(&mut cx, async move {
-        let value = future.await?;
-        settle_promise(move |cx| Ok(cx.number(value + 1.0)))
-    })
+    let (deferred, promise) = cx.promise();
+    let channel = cx.channel();
+    cx.start_future(async move {
+        let result = future.await;
+        channel.settle_with(deferred, move |cx| match result {
+            Ok(value) => Ok(cx.number(value + 1.0)),
+            Err(e) => {
+                let exception = e.into_inner(cx);
+                cx.throw(exception)
+            }
+        });
+    });
+    Ok(promise)
 }
 
 // function incrementCallbackPromise(promise: () -> Promise<number>): Promise<number>
-fn increment_callback_promise(mut cx: FunctionContext) -> JsResult<JsObject> {
+fn increment_callback_promise(mut cx: FunctionContext) -> JsResult<JsPromise> {
     // Like increment_promise, but with a callback step to produce the promise.
     // More closely mimics the store-like tests while still being lightweight.
     let callback = cx.argument::<JsFunction>(0)?;
@@ -82,13 +91,23 @@ fn increment_callback_promise(mut cx: FunctionContext) -> JsResult<JsObject> {
         .map_err(|e| PersistentException::new(cx, e))
     })?;
 
-    signal_neon_futures::promise(&mut cx, async move {
-        let value = future.await?;
-        settle_promise(move |cx| Ok(cx.number(value + 1.0)))
-    })
+    let (deferred, promise) = cx.promise();
+    let channel = cx.channel();
+    cx.start_future(async move {
+        let result = future.await;
+        channel.settle_with(deferred, move |cx| match result {
+            Ok(value) => Ok(cx.number(value + 1.0)),
+            Err(e) => {
+                let exception = e.into_inner(cx);
+                cx.throw(exception)
+            }
+        });
+    });
+    Ok(promise)
 }
 
-register_module!(mut cx, {
+#[neon::main]
+fn register(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("incrementAsync", increment_async)?;
     cx.export_function("incrementPromise", increment_promise)?;
     cx.export_function("incrementCallbackPromise", increment_callback_promise)?;
@@ -104,10 +123,10 @@ register_module!(mut cx, {
     cx.export_function("panicPostAwait", panic_post_await)?;
     cx.export_function("panicDuringSettle", panic_during_settle)?;
 
-    cx.export_function("throwPreAwait", throw_pre_await)?;
-    cx.export_function("throwDuringCallback", throw_during_callback)?;
-    cx.export_function("throwPostAwait", throw_post_await)?;
+    // cx.export_function("throwPreAwait", throw_pre_await)?;
+    // cx.export_function("throwDuringCallback", throw_during_callback)?;
+    // cx.export_function("throwPostAwait", throw_post_await)?;
     cx.export_function("throwDuringSettle", throw_during_settle)?;
 
     Ok(())
-});
+}

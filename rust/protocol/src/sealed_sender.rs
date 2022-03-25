@@ -778,8 +778,8 @@ pub async fn sealed_sender_encrypt<R: Rng + CryptoRng>(
     destination: &ProtocolAddress,
     sender_cert: &SenderCertificate,
     ptext: &[u8],
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
+    session_store: &mut (dyn SessionStore + Send + Sync),
+    identity_store: &mut (dyn IdentityKeyStore + Send + Sync),
     ctx: Context,
     rng: &mut R,
 ) -> Result<Vec<u8>> {
@@ -1600,10 +1600,10 @@ pub async fn sealed_sender_decrypt(
     local_e164: Option<String>,
     local_uuid: String,
     local_device_id: u32,
-    identity_store: &mut dyn IdentityKeyStore,
-    session_store: &mut dyn SessionStore,
-    pre_key_store: &mut dyn PreKeyStore,
-    signed_pre_key_store: &mut dyn SignedPreKeyStore,
+    identity_store: &mut (dyn IdentityKeyStore + Send + Sync),
+    session_store: &mut (dyn SessionStore + Send + Sync),
+    pre_key_store: &mut (dyn PreKeyStore + Send + Sync),
+    signed_pre_key_store: &mut (dyn SignedPreKeyStore + Send + Sync),
     ctx: Context,
 ) -> Result<SealedSenderDecryptionResult> {
     let usmc = sealed_sender_decrypt_to_usmc(ciphertext, identity_store, ctx).await?;
@@ -1640,7 +1640,7 @@ pub async fn sealed_sender_decrypt(
                 &remote_address,
                 session_store,
                 identity_store,
-                &mut rng,
+                &|| rand::rngs::OsRng,
                 ctx,
             )
             .await?
@@ -1654,7 +1654,7 @@ pub async fn sealed_sender_decrypt(
                 identity_store,
                 pre_key_store,
                 signed_pre_key_store,
-                &mut rng,
+                &|| rand::rngs::OsRng,
                 ctx,
             )
             .await?

@@ -38,7 +38,7 @@ impl InMemIdentityKeyStore {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl traits::IdentityKeyStore for InMemIdentityKeyStore {
     async fn get_identity_key_pair(&self, _ctx: Context) -> Result<IdentityKeyPair> {
         Ok(self.key_pair)
@@ -115,7 +115,7 @@ impl Default for InMemPreKeyStore {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl traits::PreKeyStore for InMemPreKeyStore {
     async fn get_pre_key(&self, id: PreKeyId, _ctx: Context) -> Result<PreKeyRecord> {
         Ok(self
@@ -162,7 +162,7 @@ impl Default for InMemSignedPreKeyStore {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl traits::SignedPreKeyStore for InMemSignedPreKeyStore {
     async fn get_signed_pre_key(
         &self,
@@ -226,7 +226,7 @@ impl Default for InMemSessionStore {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl traits::SessionStore for InMemSessionStore {
     async fn load_session(
         &self,
@@ -271,7 +271,7 @@ impl Default for InMemSenderKeyStore {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl traits::SenderKeyStore for InMemSenderKeyStore {
     async fn store_sender_key(
         &mut self,
@@ -321,7 +321,7 @@ impl InMemSignalProtocolStore {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl traits::IdentityKeyStore for InMemSignalProtocolStore {
     async fn get_identity_key_pair(&self, ctx: Context) -> Result<IdentityKeyPair> {
         self.identity_store.get_identity_key_pair(ctx).await
@@ -363,7 +363,7 @@ impl traits::IdentityKeyStore for InMemSignalProtocolStore {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl traits::PreKeyStore for InMemSignalProtocolStore {
     async fn get_pre_key(&self, id: PreKeyId, ctx: Context) -> Result<PreKeyRecord> {
         self.pre_key_store.get_pre_key(id, ctx).await
@@ -383,7 +383,7 @@ impl traits::PreKeyStore for InMemSignalProtocolStore {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl traits::SignedPreKeyStore for InMemSignalProtocolStore {
     async fn get_signed_pre_key(
         &self,
@@ -405,7 +405,7 @@ impl traits::SignedPreKeyStore for InMemSignalProtocolStore {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl traits::SessionStore for InMemSignalProtocolStore {
     async fn load_session(
         &self,
@@ -425,7 +425,7 @@ impl traits::SessionStore for InMemSignalProtocolStore {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl traits::SenderKeyStore for InMemSignalProtocolStore {
     async fn store_sender_key(
         &mut self,

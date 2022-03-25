@@ -20,8 +20,8 @@ use rand::{CryptoRng, Rng};
 pub async fn message_encrypt(
     ptext: &[u8],
     remote_address: &ProtocolAddress,
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
+    session_store: &mut (dyn SessionStore + Send + Sync),
+    identity_store: &mut (dyn IdentityKeyStore + Send + Sync),
     ctx: Context,
 ) -> Result<CiphertextMessage> {
     let mut session_record = session_store
@@ -132,11 +132,11 @@ pub async fn message_encrypt(
 pub async fn message_decrypt<R: Rng + CryptoRng>(
     ciphertext: &CiphertextMessage,
     remote_address: &ProtocolAddress,
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
-    pre_key_store: &mut dyn PreKeyStore,
-    signed_pre_key_store: &mut dyn SignedPreKeyStore,
-    csprng: &mut R,
+    session_store: &mut (dyn SessionStore + Send + Sync),
+    identity_store: &mut (dyn IdentityKeyStore + Send + Sync),
+    pre_key_store: &mut (dyn PreKeyStore + Send + Sync),
+    signed_pre_key_store: &mut (dyn SignedPreKeyStore + Send + Sync),
+    csprng: &(dyn Fn() -> R + Send + Sync),
     ctx: Context,
 ) -> Result<Vec<u8>> {
     match ciphertext {
@@ -174,11 +174,11 @@ pub async fn message_decrypt<R: Rng + CryptoRng>(
 pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
     ciphertext: &PreKeySignalMessage,
     remote_address: &ProtocolAddress,
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
-    pre_key_store: &mut dyn PreKeyStore,
-    signed_pre_key_store: &mut dyn SignedPreKeyStore,
-    csprng: &mut R,
+    session_store: &mut (dyn SessionStore + Send + Sync),
+    identity_store: &mut (dyn IdentityKeyStore + Send + Sync),
+    pre_key_store: &mut (dyn PreKeyStore + Send + Sync),
+    signed_pre_key_store: &mut (dyn SignedPreKeyStore + Send + Sync),
+    csprng: &(dyn Fn() -> R + Send + Sync),
     ctx: Context,
 ) -> Result<Vec<u8>> {
     let mut session_record = session_store
@@ -221,7 +221,7 @@ pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
         &mut session_record,
         ciphertext.message(),
         CiphertextMessageType::PreKey,
-        csprng,
+        &mut csprng(),
     )?;
 
     session_store
@@ -238,9 +238,9 @@ pub async fn message_decrypt_prekey<R: Rng + CryptoRng>(
 pub async fn message_decrypt_signal<R: Rng + CryptoRng>(
     ciphertext: &SignalMessage,
     remote_address: &ProtocolAddress,
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
-    csprng: &mut R,
+    session_store: &mut (dyn SessionStore + Send + Sync),
+    identity_store: &mut (dyn IdentityKeyStore + Send + Sync),
+    csprng: &(dyn Fn() -> R + Send + Sync),
     ctx: Context,
 ) -> Result<Vec<u8>> {
     let mut session_record = session_store
@@ -253,7 +253,7 @@ pub async fn message_decrypt_signal<R: Rng + CryptoRng>(
         &mut session_record,
         ciphertext,
         CiphertextMessageType::Whisper,
-        csprng,
+        &mut csprng(),
     )?;
 
     // Why are we performing this check after decryption instead of before?

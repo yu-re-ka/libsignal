@@ -26,9 +26,9 @@ pub async fn process_prekey(
     message: &PreKeySignalMessage,
     remote_address: &ProtocolAddress,
     session_record: &mut SessionRecord,
-    identity_store: &mut dyn IdentityKeyStore,
-    pre_key_store: &mut dyn PreKeyStore,
-    signed_prekey_store: &mut dyn SignedPreKeyStore,
+    identity_store: &mut (dyn IdentityKeyStore + Send + Sync),
+    pre_key_store: &mut (dyn PreKeyStore + Send + Sync),
+    signed_prekey_store: &mut (dyn SignedPreKeyStore + Send + Sync),
     ctx: Context,
 ) -> Result<Option<PreKeyId>> {
     let their_identity_key = message.identity_key();
@@ -69,9 +69,9 @@ async fn process_prekey_v3(
     message: &PreKeySignalMessage,
     remote_address: &ProtocolAddress,
     session_record: &mut SessionRecord,
-    signed_prekey_store: &mut dyn SignedPreKeyStore,
-    pre_key_store: &mut dyn PreKeyStore,
-    identity_store: &mut dyn IdentityKeyStore,
+    signed_prekey_store: &mut (dyn SignedPreKeyStore + Send + Sync),
+    pre_key_store: &mut (dyn PreKeyStore + Send + Sync),
+    identity_store: &mut (dyn IdentityKeyStore + Send + Sync),
     ctx: Context,
 ) -> Result<Option<PreKeyId>> {
     if session_record.has_session_state(
@@ -127,10 +127,10 @@ async fn process_prekey_v3(
 
 pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
     remote_address: &ProtocolAddress,
-    session_store: &mut dyn SessionStore,
-    identity_store: &mut dyn IdentityKeyStore,
+    session_store: &mut (dyn SessionStore + Send + Sync),
+    identity_store: &mut (dyn IdentityKeyStore + Send + Sync),
     bundle: &PreKeyBundle,
-    mut csprng: &mut R,
+    csprng: &(dyn Fn() -> R + Send + Sync),
     ctx: Context,
 ) -> Result<()> {
     let their_identity_key = bundle.identity_key()?;
@@ -156,7 +156,7 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
         .await?
         .unwrap_or_else(SessionRecord::new_fresh);
 
-    let our_base_key_pair = KeyPair::generate(&mut csprng);
+    let our_base_key_pair = KeyPair::generate(&mut csprng());
     let their_signed_prekey = bundle.signed_pre_key_public()?;
 
     let their_one_time_prekey = bundle.pre_key_public()?;
@@ -173,7 +173,7 @@ pub async fn process_prekey_bundle<R: Rng + CryptoRng>(
         their_signed_prekey,
     );
 
-    let mut session = ratchet::initialize_alice_session(&parameters, csprng)?;
+    let mut session = ratchet::initialize_alice_session(&parameters, &mut csprng())?;
 
     log::info!(
         "set_unacknowledged_pre_key_message for: {} with preKeyId: {}",
